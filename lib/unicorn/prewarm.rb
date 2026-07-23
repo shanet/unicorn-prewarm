@@ -11,7 +11,9 @@ module Unicorn
     end
 
     fake = Unicorn::Prewarm::FakeSocket.new(get)
-    server.send(:process_client, fake)
+    fake_addr_info = Unicorn::Prewarm::FakeAddrinfo.new
+
+    server.send(:process_client, fake, fake_addr_info)
     fake.response
   end
 
@@ -22,7 +24,7 @@ module Unicorn
       end
 
       def readuntil(idx, ignore_eof)
-        buff = ''
+        buff = +''
         loop do
           char = read(1)
           return buff unless char
@@ -40,6 +42,21 @@ module Unicorn
         @version = version
         @path = path
         @out = StringIO.new
+        @read = false
+      end
+
+      def readpartial(maxlen, outbuf = nil)
+        outbuf ||= ''
+        outbuf.clear
+
+        unless @read
+          @read = true
+          io = StringIO.new
+          @req.send(:write_header, io, @version, @path)
+          outbuf.replace(io.string)
+        end
+
+        outbuf
       end
 
       def kgio_read!(_size, buff = '')
@@ -63,6 +80,20 @@ module Unicorn
 
       def closed?
         true
+      end
+    end
+
+    class FakeAddrinfo
+      def unix?
+        false
+      end
+
+      def ip?
+        true
+      end
+
+      def ip_address
+        '127.0.0.1'
       end
     end
   end
